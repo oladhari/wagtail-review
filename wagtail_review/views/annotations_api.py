@@ -78,8 +78,20 @@ def item(request, id):
 
         return JsonResponse(annotation.as_json_data())
 
+    elif request.method == 'DELETE':
+        annotation = get_object_or_404(Annotation, id=id)
+
+        # Check if the reviewer is allowed to delete the annotation
+        if reviewer.review != annotation.reviewer.review:
+            raise PermissionDenied
+
+        # If the reviewer has permission, delete the annotation
+        annotation.delete()
+
+        return JsonResponse({'status': 'Annotation deleted successfully'}, status=204)
+
     else:
-        return HttpResponseNotAllowed(['GET'], "Method not allowed")
+        return HttpResponseNotAllowed(['GET', 'DELETE'], "Method not allowed")
 
 
 @never_cache
