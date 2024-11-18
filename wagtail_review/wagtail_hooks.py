@@ -1,10 +1,7 @@
 from django.conf.urls import include
 from django.urls import re_path
 from django.contrib import messages as django_messages
-from django.templatetags.static import static
 from django.shortcuts import redirect
-from django.urls import reverse
-from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
 import swapper
@@ -88,16 +85,3 @@ def handle_submit_for_review(request, page):
 
 hooks.register('after_create_page', handle_submit_for_review)
 hooks.register('after_edit_page', handle_submit_for_review)
-
-
-class ReviewsMenuItem(MenuItem):
-    def is_shown(self, request):
-        return bool(Review.get_pages_with_reviews_for_user(request.user))
-
-
-@hooks.register('register_admin_menu_item')
-def register_images_menu_item():
-    return ReviewsMenuItem(
-        _('Reviews'), reverse('wagtail_review_admin:dashboard'),
-        name='reviews', classnames='icon icon-tick', order=1000
-    )

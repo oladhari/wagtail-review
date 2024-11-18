@@ -66,32 +66,46 @@ class BaseReview(models.Model):
     @classmethod
     def get_pages_with_reviews_for_user(cls, user):
         """
-        Return a queryset of pages which have reviews, for which the user has edit permission
+        Return a queryset of pages which have reviews, for which the user has edit permission.
+        Optimized to improve performance with large datasets.
         """
         if WAGTAIL_VERSION >= (5, 1):
             editable_pages = PagePermissionPolicy().instances_user_has_permission_for(user, "change")
         else:
             editable_pages = UserPagePermissionsProxy(user).editable_pages()
 
-        reviewed_pages = (
-            cls.objects
-            .order_by('-created_at')
-            .values_list(revision_page_fk_relation, 'created_at')
+        # Get reviewed page IDs
+        reviewed_page_ids = cls.objects.values_list(revision_page_fk_relation, flat=True).distinct()
+
+        # Fetch the latest review creation date for each page
+        latest_reviews = (
+            cls.objects.filter(**{f"{revision_page_fk_relation}__in": reviewed_page_ids})
+            .values(revision_page_fk_relation)
+            .annotate(last_review_requested_at=models.Max("created_at"))
         )
-        # Annotate datetime when a review was last created for this page
-        last_review_requested_at = Case(
-            *[
-                When(pk=pk, then=Value(created_at))
-                for pk, created_at in reviewed_pages
-            ],
-            output_field=models.DateTimeField(),
+
+        # Map page IDs to their latest review date
+        latest_reviews_map = {
+            review[revision_page_fk_relation]: review["last_review_requested_at"]
+            for review in latest_reviews
+        }
+
+        # Add `last_review_requested_at` annotation to editable pages
+        pages_with_reviews = (
+            editable_pages.filter(pk__in=reviewed_page_ids)
+            .annotate(
+                last_review_requested_at=models.Case(
+                    *[
+                        models.When(pk=pk, then=models.Value(created_at))
+                        for pk, created_at in latest_reviews_map.items()
+                    ],
+                    output_field=models.DateTimeField(),
+                )
+            )
+            .order_by("-last_review_requested_at")
         )
-        return (
-            editable_pages
-            .filter(pk__in=(page[0] for page in reviewed_pages))
-            .annotate(last_review_requested_at=last_review_requested_at)
-            .order_by('-last_review_requested_at')
-        )
+
+        return pages_with_reviews
 
     class Meta:
         abstract = True
